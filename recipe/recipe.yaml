@@ -1,7 +1,7 @@
 schema_version: 1
 
 context:
-  number: 4
+  number: 5
 
 recipe:
   name: microarch-level-split
@@ -63,18 +63,26 @@ outputs:
       build:
         - python
       run:
-        - __unix
+        # MSVC cannot target the level 2 feature set; a level 2 build on
+        # Windows would only duplicate level 1, so keep it unsolvable there.
+        - if: family == "x86_64" and level == "2"
+          then: __unix
       run_exports:
         strong:
           - _${{ family }}-microarch-level >=${{ level }}
     tests:
-      # An installation test is not possible: the test environment could only
-      # be solved on a CI machine whose CPU matches the variant's
-      # __archspec constraint. package_contents inspects the artifact instead.
+      # The Windows scripts cannot run on the Linux CI that builds these
+      # noarch packages; package_contents inspects the artifact instead.
       - package_contents:
           files:
             - etc/conda/activate.d/~activate-${{ family }}-level.sh
             - etc/conda/deactivate.d/~deactivate-${{ family }}-level.sh
+            - if: family == "x86_64"
+              then:
+                - etc/conda/activate.d/~activate-${{ family }}-level.bat
+                - etc/conda/deactivate.d/~deactivate-${{ family }}-level.bat
+                - etc/conda/activate.d/~activate-${{ family }}-level.ps1
+                - etc/conda/deactivate.d/~deactivate-${{ family }}-level.ps1
     about:
       homepage: https://github.com/conda-forge/microarch-level-feedstock
       summary: 'Meta package to build conda recipes with microarchitecture levels'
@@ -105,7 +113,18 @@ outputs:
         will force level=2.
         Note that no checks will be done to ensure that the level is viable.
 
-        Only supported on Linux and macOS.
+        On Windows (x86_64 only), the activation scripts append MSVC-style
+        flags instead: `/arch:AVX2` for level 3 and `/arch:AVX512` for
+        level 4. These are only applied when `CC` is `cl` or `clang-cl`,
+        so other toolchains do not receive flags in a syntax they cannot
+        parse. Level 1 sets no flags on Windows: MSVC's x64 baseline
+        already targets it. Level 2 is not installable on Windows (it
+        requires `__unix`): MSVC cannot target its feature set, so building
+        against it would only duplicate level 1.
+        Windows users need conda >= 24.3.0, mamba 2.x
+        with Windows archspec support, or pixi for the `__archspec` virtual
+        package to report the CPU microarchitecture; older solvers report
+        level 1.
       license: BSD-3-Clause
       license_file: LICENSE.txt
 
